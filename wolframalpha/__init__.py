@@ -1,3 +1,4 @@
+import aiohttp
 import itertools
 import json
 import urllib.parse
@@ -8,18 +9,26 @@ import xmltodict
 from more_itertools import always_iterable
 
 
+async def create_http_session():
+    return aiohttp.ClientSession()
+
+
 class Client:
     """
     Wolfram|Alpha v2.0 client
 
     Pass an ID to the object upon instantiation, then
     query Wolfram Alpha using the query method.
+    You can pass an aiohttp.ClientSession as kwarg to use an already
+    created one.
     """
 
-    def __init__(self, app_id):
+    def __init__(self, app_id, *, session=None):
         self.app_id = app_id
+        self.session = session
+        self.url = "https://api.wolframalpha.com/v2/query"
 
-    def query(self, input, params=(), **kwargs):
+    async def query(self, input, params=(), **kwargs):
         """
         Query Wolfram|Alpha using the v2.0 API
 
@@ -47,11 +56,13 @@ class Client:
         data = itertools.chain(params, data.items(), kwargs.items())
 
         query = urllib.parse.urlencode(tuple(data))
-        url = 'https://api.wolframalpha.com/v2/query?' + query
-        resp = urllib.request.urlopen(url)
-        assert resp.headers.get_content_type() == 'text/xml'
-        assert resp.headers.get_param('charset') == 'utf-8'
-        return Result(resp)
+
+        if self.session is None:
+            self.session = await create_http_session()
+
+        resp = await self.session.get(self.url, params=query)
+        assert resp.headers["Content-Type"] == 'text/xml;charset=utf-8'
+        return Result(await resp.text("utf-8"))
 
 
 class ErrorHandler:
@@ -212,7 +223,8 @@ class Result(ErrorHandler, Document):
         """
         The pods that hold the response to a simple, discrete query.
         """
-        return (pod for pod in self.pods if pod.primary or pod.title == 'Result')
+        return (pod for pod in self.pods
+                if pod.primary or pod.title == 'Result')
 
     @property
     def details(self):
