@@ -55,12 +55,10 @@ class Client:
         )
         data = itertools.chain(params, data.items(), kwargs.items())
 
-        query = urllib.parse.urlencode(tuple(data))
-
         if self.session is None:
             self.session = await create_http_session()
 
-        resp = await self.session.get(self.url, params=query)
+        resp = await self.session.get(self.url, params=tuple(data))
         assert resp.headers["Content-Type"] == 'text/xml;charset=utf-8'
         return Result(await resp.text("utf-8"))
 
